@@ -1,35 +1,27 @@
 import streamlit as st
 import requests
 
-# ─────────────────────────────────────────────
-# CONFIGURAÇÃO — substitua pelo seu App ID e Token
-# Cadastre-se em: https://developers.mercadolivre.com.br
-# Crie o app e copie o App ID. O Access Token pode ser
-# gerado em: https://developers.mercadolivre.com.br/en_us/authentication-and-authorization
-# ─────────────────────────────────────────────
-ML_ACCESS_TOKEN = st.secrets.get("ML_ACCESS_TOKEN", "")  # Coloque no Streamlit Secrets
-ML_AFFILIATE_ID = st.secrets.get("ML_AFFILIATE_ID", "")  # Seu ID de afiliado ML
+ML_CLIENT_ID = st.secrets.get("ML_CLIENT_ID", "")
+ML_AFFILIATE_ID = st.secrets.get("ML_AFFILIATE_ID", "")  # Opcional por enquanto
 
 BASE_URL = "https://api.mercadolibre.com"
 
 CATEGORY_MAP = {
-    "informatica": "MLB1648",   # Computadores e Acessórios
-    "celulares":   "MLB1051",   # Celulares e Smartphones
-    "tv":          "MLB1000",   # TV, Áudio e Vídeo
-    "games":       "MLB1144",   # Video Games
-    "casa":        "MLB1574",   # Eletrodomésticos
-    "audio":       "MLB1000",   # Áudio
-    "eletronicos": "MLB1000",   # Eletrônicos
+    "informatica": "MLB1648",
+    "celulares":   "MLB1051",
+    "tv":          "MLB1000",
+    "games":       "MLB1144",
+    "casa":        "MLB1574",
+    "audio":       "MLB1000",
+    "eletronicos": "MLB1132",
+    "todos":       "MLB1648",
 }
 
 
-def buscar_produtos_ml(categoria="informatica", limite=12, ordenar="price_asc"):
-    """
-    Busca produtos reais do Mercado Livre via API oficial.
-    Retorna lista no mesmo formato do data/products.py para compatibilidade.
-    """
-    if not ML_ACCESS_TOKEN:
-        return []  # Sem token, retorna vazio (usa mock)
+@st.cache_data(ttl=1800)  # Cache de 30 minutos para não sobrecarregar a API
+def buscar_produtos_ml(categoria="informatica", limite=12):
+    if not ML_CLIENT_ID:
+        return []
 
     category_id = CATEGORY_MAP.get(categoria, "MLB1648")
 
@@ -38,11 +30,10 @@ def buscar_produtos_ml(categoria="informatica", limite=12, ordenar="price_asc"):
         params = {
             "category": category_id,
             "limit": limite,
-            "sort": ordenar,
+            "sort": "relevance",
             "condition": "new",
         }
-        headers = {"Authorization": f"Bearer {ML_ACCESS_TOKEN}"}
-        resp = requests.get(url, params=params, headers=headers, timeout=8)
+        resp = requests.get(url, params=params, timeout=8)
         resp.raise_for_status()
         data = resp.json()
 
@@ -52,13 +43,19 @@ def buscar_produtos_ml(categoria="informatica", limite=12, ordenar="price_asc"):
             price = item["price"]
             discount = int((1 - price / original) * 100) if original > price else 0
 
-            # Monta link de afiliado
-            affiliate_url = (
-                f"https://www.mercadolivre.com.br/offsite?id={item['id']}"
-                f"&matt_tool={ML_AFFILIATE_ID}&utm_source=ofertasnow&utm_medium=affiliate"
-                if ML_AFFILIATE_ID
-                else item.get("permalink", "#")
-            )
+            # Link direto ao produto (sem afiliado por enquanto)
+            product_url = item.get("permalink", "#")
+
+            # Se tiver ID de afiliado no futuro, monta link rastreado
+            if ML_AFFILIATE_ID:
+                product_url = (
+                    f"https://www.mercadolivre.com.br/offsite?id={item['id']}"
+                    f"&matt_tool={ML_AFFILIATE_ID}&utm_source=ofertasnow&utm_medium=affiliate"
+                )
+
+            # Imagem em qualidade maior
+            thumbnail = item.get("thumbnail", "")
+            image = thumbnail.replace("-I.jpg", "-O.jpg") if thumbnail else ""
 
             products.append({
                 "id": f"ml_{item['id']}",
@@ -66,11 +63,11 @@ def buscar_produtos_ml(categoria="informatica", limite=12, ordenar="price_asc"):
                 "price": price,
                 "original_price": original,
                 "discount": discount,
-                "image": item.get("thumbnail", "").replace("-I.jpg", "-O.jpg"),
+                "image": image,
                 "marketplace": "mercadolivre",
-                "rating": item.get("reviews", {}).get("rating_average", 4.0) or 4.0,
-                "reviews": item.get("reviews", {}).get("total", 0) or 0,
-                "affiliate_url": affiliate_url,
+                "rating": 4.2,
+                "reviews": item.get("sold_quantity", 0) or 0,
+                "affiliate_url": product_url,
                 "category": categoria,
                 "tag": "🟡 Mercado Livre",
                 "free_shipping": item.get("shipping", {}).get("free_shipping", False),
@@ -83,9 +80,9 @@ def buscar_produtos_ml(categoria="informatica", limite=12, ordenar="price_asc"):
         return []
 
 
+@st.cache_data(ttl=1800)
 def buscar_por_termo_ml(termo: str, limite=12):
-    """Busca por termo livre (ex: 'notebook lenovo')."""
-    if not ML_ACCESS_TOKEN:
+    if not ML_CLIENT_ID:
         return []
 
     try:
@@ -96,9 +93,8 @@ def buscar_por_termo_ml(termo: str, limite=12):
             "condition": "new",
             "sort": "relevance",
         }
-        headers = {"Authorization": f"Bearer {ML_ACCESS_TOKEN}"}
-        resp = requests.get(url, params=params, headers=headers, timeout=8)
-        resp.raise_for_keys()
+        resp = requests.get(url, params=params, timeout=8)
+        resp.raise_for_status()
         data = resp.json()
 
         products = []
@@ -106,13 +102,15 @@ def buscar_por_termo_ml(termo: str, limite=12):
             original = item.get("original_price") or item["price"]
             price = item["price"]
             discount = int((1 - price / original) * 100) if original > price else 0
+            thumbnail = item.get("thumbnail", "")
+            image = thumbnail.replace("-I.jpg", "-O.jpg") if thumbnail else ""
+            product_url = item.get("permalink", "#")
 
-            affiliate_url = (
-                f"https://www.mercadolivre.com.br/offsite?id={item['id']}"
-                f"&matt_tool={ML_AFFILIATE_ID}&utm_source=ofertasnow&utm_medium=affiliate"
-                if ML_AFFILIATE_ID
-                else item.get("permalink", "#")
-            )
+            if ML_AFFILIATE_ID:
+                product_url = (
+                    f"https://www.mercadolivre.com.br/offsite?id={item['id']}"
+                    f"&matt_tool={ML_AFFILIATE_ID}&utm_source=ofertasnow&utm_medium=affiliate"
+                )
 
             products.append({
                 "id": f"ml_{item['id']}",
@@ -120,11 +118,11 @@ def buscar_por_termo_ml(termo: str, limite=12):
                 "price": price,
                 "original_price": original,
                 "discount": discount,
-                "image": item.get("thumbnail", "").replace("-I.jpg", "-O.jpg"),
+                "image": image,
                 "marketplace": "mercadolivre",
-                "rating": 4.0,
-                "reviews": 0,
-                "affiliate_url": affiliate_url,
+                "rating": 4.2,
+                "reviews": item.get("sold_quantity", 0) or 0,
+                "affiliate_url": product_url,
                 "category": "busca",
                 "tag": "🟡 Mercado Livre",
                 "free_shipping": item.get("shipping", {}).get("free_shipping", False),
