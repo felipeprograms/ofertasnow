@@ -2,13 +2,32 @@ import streamlit as st
 from data.products import PRODUCTS, CATEGORIES, MARKETPLACES
 
 
+def get_products_smart(categoria="todos", search_query=""):
+    """Usa API do ML se configurado, senão usa produtos mock."""
+    try:
+        import streamlit as st
+        client_id = st.secrets.get("ML_CLIENT_ID", "")
+        if client_id:
+            from utils.mercadolivre import buscar_produtos_ml, buscar_por_termo_ml
+            if search_query:
+                produtos = buscar_por_termo_ml(search_query, limite=12)
+            else:
+                cat = categoria if categoria != "todos" else "informatica"
+                produtos = buscar_produtos_ml(cat, limite=12)
+            if produtos:
+                return produtos
+    except Exception:
+        pass
+    return PRODUCTS
+
+
 def render_product_card(product):
     mp = MARKETPLACES.get(product["marketplace"], {})
     mp_label = mp.get("label", product["marketplace"])
     economy = product["original_price"] - product["price"]
     stars = "★" * int(product["rating"]) + "☆" * (5 - int(product["rating"]))
+    shipping = "✅ Frete grátis" if product["free_shipping"] else "🚚 Calcular frete"
 
-    # Emoji por marketplace
     mp_emoji = {
         "mercadolivre": "🟡",
         "amazon":       "🟠",
@@ -19,37 +38,28 @@ def render_product_card(product):
     emoji = mp_emoji.get(product["marketplace"], "🛒")
 
     with st.container(border=True):
-        # Imagem
         try:
             st.image(product["image"], use_container_width=True)
         except Exception:
-            st.markdown("🖼️ *Imagem indisponível*")
+            st.markdown("🖼️")
 
-        # Badges
         col_badge1, col_badge2 = st.columns(2)
         with col_badge1:
             st.markdown(f"🔥 **-{product['discount']}% OFF**")
         with col_badge2:
             st.markdown(f"{emoji} {mp_label}")
 
-        # Título
         st.markdown(f"**{product['title'][:70]}{'...' if len(product['title']) > 70 else ''}**")
-
-        # Tag
         st.caption(product["tag"])
-
-        # Preço
         st.markdown(f"### R$ {product['price']:,.2f}")
         st.caption(f"~~R$ {product['original_price']:,.2f}~~  •  💚 Economia R$ {economy:,.2f}")
 
-        # Rating e frete
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             st.caption(f"{stars} ({product['reviews']:,})")
         with col_r2:
-            st.caption("✅ Frete grátis" if product["free_shipping"] else "🚚 Calcular")
+            st.caption(shipping)
 
-        # Botão de compra
         st.link_button(
             f"🛒 Comprar no {mp_label}",
             url=product["affiliate_url"],
@@ -57,9 +67,7 @@ def render_product_card(product):
         )
 
 
-def filter_products():
-    products = PRODUCTS.copy()
-
+def filter_products(products):
     q = st.session_state.get("search_query", "").lower().strip()
     if q:
         products = [p for p in products if q in p["title"].lower() or q in p["category"].lower()]
@@ -82,9 +90,9 @@ def filter_products():
     order = st.session_state.get("order_filter", "Maior desconto")
     if order == "Maior desconto":
         products.sort(key=lambda p: p["discount"], reverse=True)
-    elif order == "Menor preco":
+    elif order == "Menor preço":
         products.sort(key=lambda p: p["price"])
-    elif order == "Maior preco":
+    elif order == "Maior preço":
         products.sort(key=lambda p: p["price"], reverse=True)
     elif order == "Melhor avaliado":
         products.sort(key=lambda p: p["rating"], reverse=True)
@@ -97,6 +105,7 @@ def render_feed():
         st.session_state["selected_category"] = "todos"
 
     selected = st.session_state["selected_category"]
+    search_query = st.session_state.get("search_query", "")
 
     # Botões de categoria
     cols_cat = st.columns(len(CATEGORIES))
@@ -110,13 +119,23 @@ def render_feed():
 
     st.divider()
 
-    products = filter_products()
+    # Busca produtos (API real ou mock)
+    with st.spinner("🔍 Buscando ofertas..."):
+        products = get_products_smart(selected, search_query)
+        products = filter_products(products)
 
     if not products:
         st.info("🔍 Nenhum produto encontrado. Tente outro filtro.")
         return
 
-    st.markdown(f"🔥 **{len(products)} ofertas encontradas** · *Atualizado agora*")
+    # Indica fonte dos dados
+    try:
+        using_api = bool(st.secrets.get("ML_CLIENT_ID", ""))
+    except Exception:
+        using_api = False
+
+    fonte = "🟢 Produtos reais do Mercado Livre" if using_api else "🟡 Produtos de demonstração"
+    st.markdown(f"🔥 **{len(products)} ofertas encontradas** · *{fonte}*")
     st.markdown("")
 
     # Grid 3 colunas
