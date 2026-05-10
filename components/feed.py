@@ -3,9 +3,7 @@ from data.products import PRODUCTS, CATEGORIES, MARKETPLACES
 
 
 def get_products_smart(categoria="todos", search_query=""):
-    """Usa API do ML se configurado, senão usa produtos mock."""
     try:
-        import streamlit as st
         client_id = st.secrets.get("ML_CLIENT_ID", "")
         if client_id:
             from utils.mercadolivre import buscar_produtos_ml, buscar_por_termo_ml
@@ -37,6 +35,11 @@ def render_product_card(product):
     }
     emoji = mp_emoji.get(product["marketplace"], "🛒")
 
+    # Garante que a URL é externa e válida
+    url = product.get("affiliate_url", "#")
+    if not url.startswith("http"):
+        url = f"https://www.mercadolivre.com.br"
+
     with st.container(border=True):
         try:
             st.image(product["image"], use_container_width=True)
@@ -60,10 +63,13 @@ def render_product_card(product):
         with col_r2:
             st.caption(shipping)
 
-        st.link_button(
-            f"🛒 Comprar no {mp_label}",
-            url=product["affiliate_url"],
-            use_container_width=True,
+        # Botão usando HTML puro — abre em nova aba de forma confiável
+        st.markdown(
+            f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
+            f'style="display:block; text-align:center; background:#ff6b00; color:white !important; '
+            f'padding:10px; border-radius:8px; font-weight:bold; text-decoration:none; '
+            f'font-size:14px; margin-top:8px;">🛒 Comprar no {mp_label}</a>',
+            unsafe_allow_html=True
         )
 
 
@@ -107,7 +113,6 @@ def render_feed():
     selected = st.session_state["selected_category"]
     search_query = st.session_state.get("search_query", "")
 
-    # Botões de categoria
     cols_cat = st.columns(len(CATEGORIES))
     for i, cat in enumerate(CATEGORIES):
         with cols_cat[i]:
@@ -119,7 +124,6 @@ def render_feed():
 
     st.divider()
 
-    # Busca produtos (API real ou mock)
     with st.spinner("🔍 Buscando ofertas..."):
         products = get_products_smart(selected, search_query)
         products = filter_products(products)
@@ -128,7 +132,6 @@ def render_feed():
         st.info("🔍 Nenhum produto encontrado. Tente outro filtro.")
         return
 
-    # Indica fonte dos dados
     try:
         using_api = bool(st.secrets.get("ML_CLIENT_ID", ""))
     except Exception:
@@ -138,7 +141,6 @@ def render_feed():
     st.markdown(f"🔥 **{len(products)} ofertas encontradas** · *{fonte}*")
     st.markdown("")
 
-    # Grid 3 colunas
     for i in range(0, len(products), 3):
         row = products[i:i+3]
         cols = st.columns(3, gap="medium")
