@@ -202,3 +202,24 @@ MARKETPLACES = {
     "kabum":        {"label": "KaBuM!",          "badge_class": "badge-kabum"},
     "pichau":       {"label": "Pichau",          "badge_class": "badge-pichau"},
 }
+
+
+def get_products(categoria="todos", search_query=""):
+    """
+    Retorna produtos: usa API do ML se token configurado, senão usa mock.
+    Importe esta função no feed.py no lugar de PRODUCTS diretamente.
+    """
+    try:
+        from utils.mercadolivre import buscar_produtos_ml, buscar_por_termo_ml
+        import streamlit as st
+        token = st.secrets.get("ML_ACCESS_TOKEN", "")
+        if token:
+            if search_query:
+                ml_products = buscar_por_termo_ml(search_query)
+            else:
+                ml_products = buscar_produtos_ml(categoria if categoria != "todos" else "informatica")
+            if ml_products:
+                return ml_products
+    except Exception:
+        pass
+    return PRODUCTS  # Fallback para produtos mock
