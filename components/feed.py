@@ -14,8 +14,10 @@ def get_products_smart(categoria="todos", search_query=""):
                 produtos = buscar_produtos_ml(cat, limite=12)
             if produtos:
                 return produtos
-    except Exception:
-        pass
+        else:
+            st.warning("ML_CLIENT_ID não encontrado nos Secrets. Usando produtos de demonstração.")
+    except Exception as e:
+        st.warning(f"Erro ao acessar secrets: {e}")
     return PRODUCTS
 
 
@@ -26,61 +28,65 @@ def render_product_card(product):
     stars = "★" * int(product["rating"]) + "☆" * (5 - int(product["rating"]))
     shipping = "Frete gratis" if product["free_shipping"] else "Calcular frete"
 
-    mp_emoji = {
-        "mercadolivre": "ML",
-        "amazon":       "AMZ",
-        "shopee":       "SHP",
-        "kabum":        "KBM",
-        "pichau":       "PCH",
+    mp_cores = {
+        "mercadolivre": "#ffe600; color:#222",
+        "amazon":       "#ff9900; color:#111",
+        "shopee":       "#ee4d2d; color:#fff",
+        "kabum":        "#ff6600; color:#fff",
+        "pichau":       "#0066cc; color:#fff",
     }
-    sigla = mp_emoji.get(product["marketplace"], "🛒")
+    mp_cor = mp_cores.get(product["marketplace"], "#444; color:#fff")
 
     url = product.get("affiliate_url", "#")
-    if not url.startswith("http"):
+    if not url or not url.startswith("http"):
         url = "https://www.mercadolivre.com.br"
 
+    image_url = product.get("image", "")
+
     with st.container(border=True):
-        # Imagem via requests para evitar bloqueio
-        image_url = product.get("image", "")
+        # Imagem via HTML — mais confiável no Streamlit Cloud
         if image_url and image_url.startswith("http"):
-            try:
-                import requests
-                from PIL import Image
-                from io import BytesIO
-                resp = requests.get(image_url, timeout=5,
-                                    headers={"User-Agent": "Mozilla/5.0"})
-                if resp.status_code == 200:
-                    img = Image.open(BytesIO(resp.content))
-                    st.image(img, use_container_width=True)
-                else:
-                    st.markdown("_(sem imagem)_")
-            except Exception:
-                st.markdown("_(sem imagem)_")
+            st.markdown(
+                f'<div style="text-align:center; padding:8px; background:#111; '
+                f'border-radius:8px; margin-bottom:8px; min-height:160px; '
+                f'display:flex; align-items:center; justify-content:center;">'
+                f'<img src="{image_url}" style="max-height:150px; max-width:100%; '
+                f'object-fit:contain;" /></div>',
+                unsafe_allow_html=True
+            )
         else:
-            st.markdown("_(sem imagem)_")
+            st.markdown(
+                '<div style="text-align:center; padding:40px; background:#111; '
+                'border-radius:8px; color:#666; margin-bottom:8px;">Sem imagem</div>',
+                unsafe_allow_html=True
+            )
 
-        col_badge1, col_badge2 = st.columns(2)
-        with col_badge1:
+        col1, col2 = st.columns(2)
+        with col1:
             st.markdown(f"**-{product['discount']}% OFF**")
-        with col_badge2:
-            st.markdown(f"**{sigla}** {mp_label}")
+        with col2:
+            st.markdown(
+                f'<span style="background:{mp_cor}; padding:2px 8px; '
+                f'border-radius:6px; font-size:12px; font-weight:bold;">'
+                f'{mp_label}</span>',
+                unsafe_allow_html=True
+            )
 
-        title = product['title']
+        title = product["title"]
         st.markdown(f"**{title[:70]}{'...' if len(title) > 70 else ''}**")
         st.caption(product.get("tag", ""))
         st.markdown(f"### R$ {product['price']:,.2f}")
+        st.caption(
+            f"De: R$ {product['original_price']:,.2f} | "
+            f"Economia: R$ {economy:,.2f}"
+        )
 
-        preco_orig = f"R$ {product['original_price']:,.2f}"
-        economia = f"R$ {economy:,.2f}"
-        st.caption(f"De: {preco_orig} | Economia: {economia}")
-
-        col_r1, col_r2 = st.columns(2)
-        with col_r1:
+        c1, c2 = st.columns(2)
+        with c1:
             st.caption(f"{stars} ({product['reviews']:,})")
-        with col_r2:
+        with c2:
             st.caption(shipping)
 
-        # Botao HTML simples sem emoji para evitar problema de encoding
         st.markdown(
             f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
             f'style="display:block; text-align:center; background:#ff6b00; '
@@ -94,8 +100,8 @@ def render_product_card(product):
 def filter_products(products):
     q = st.session_state.get("search_query", "").lower().strip()
     if q:
-        products = [p for p in products if q in p["title"].lower()
-                    or q in p["category"].lower()]
+        products = [p for p in products if
+                    q in p["title"].lower() or q in p["category"].lower()]
 
     cat = st.session_state.get("selected_category", "todos")
     if cat != "todos":
@@ -151,13 +157,7 @@ def render_feed():
         st.info("Nenhum produto encontrado. Tente outro filtro.")
         return
 
-    try:
-        using_api = bool(st.secrets.get("ML_CLIENT_ID", ""))
-    except Exception:
-        using_api = False
-
-    fonte = "Produtos reais do Mercado Livre" if using_api else "Produtos de demonstracao"
-    st.markdown(f"**{len(products)} ofertas encontradas** | *{fonte}*")
+    st.markdown(f"**{len(products)} ofertas encontradas**")
     st.markdown("")
 
     for i in range(0, len(products), 3):
