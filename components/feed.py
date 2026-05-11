@@ -1,23 +1,19 @@
 import streamlit as st
 from data.products import PRODUCTS, CATEGORIES, MARKETPLACES
+from utils.mercadolivre import buscar_produtos_ml, buscar_por_termo_ml
 
 
 def get_products_smart(categoria="todos", search_query=""):
     try:
-        client_id = st.secrets.get("ML_CLIENT_ID", "")
-        if client_id:
-            from utils.mercadolivre import buscar_produtos_ml, buscar_por_termo_ml
-            if search_query:
-                produtos = buscar_por_termo_ml(search_query, limite=12)
-            else:
-                cat = categoria if categoria != "todos" else "informatica"
-                produtos = buscar_produtos_ml(cat, limite=12)
-            if produtos:
-                return produtos
+        if search_query:
+            produtos = buscar_por_termo_ml(search_query, limite=12)
         else:
-            st.warning("ML_CLIENT_ID não encontrado nos Secrets. Usando produtos de demonstração.")
-    except Exception as e:
-        st.warning(f"Erro ao acessar secrets: {e}")
+            cat = categoria if categoria != "todos" else "informatica"
+            produtos = buscar_produtos_ml(cat, limite=12)
+        if produtos:
+            return produtos
+    except Exception:
+        pass
     return PRODUCTS
 
 
@@ -29,35 +25,35 @@ def render_product_card(product):
     shipping = "Frete gratis" if product["free_shipping"] else "Calcular frete"
 
     mp_cores = {
-        "mercadolivre": "#ffe600; color:#222",
-        "amazon":       "#ff9900; color:#111",
-        "shopee":       "#ee4d2d; color:#fff",
-        "kabum":        "#ff6600; color:#fff",
-        "pichau":       "#0066cc; color:#fff",
+        "mercadolivre": "background:#ffe600; color:#222;",
+        "amazon":       "background:#ff9900; color:#111;",
+        "shopee":       "background:#ee4d2d; color:#fff;",
+        "kabum":        "background:#ff6600; color:#fff;",
+        "pichau":       "background:#0066cc; color:#fff;",
     }
-    mp_cor = mp_cores.get(product["marketplace"], "#444; color:#fff")
+    mp_cor = mp_cores.get(product["marketplace"], "background:#444; color:#fff;")
 
-    url = product.get("affiliate_url", "#")
-    if not url or not url.startswith("http"):
+    url = product.get("affiliate_url", "https://www.mercadolivre.com.br")
+    if not url.startswith("http"):
         url = "https://www.mercadolivre.com.br"
 
     image_url = product.get("image", "")
 
     with st.container(border=True):
-        # Imagem via HTML — mais confiável no Streamlit Cloud
-        if image_url and image_url.startswith("http"):
+        if image_url and image_url.startswith("https"):
             st.markdown(
-                f'<div style="text-align:center; padding:8px; background:#111; '
-                f'border-radius:8px; margin-bottom:8px; min-height:160px; '
-                f'display:flex; align-items:center; justify-content:center;">'
+                f'<div style="text-align:center; background:#111; border-radius:8px; '
+                f'padding:8px; margin-bottom:8px; height:160px; display:flex; '
+                f'align-items:center; justify-content:center; overflow:hidden;">'
                 f'<img src="{image_url}" style="max-height:150px; max-width:100%; '
-                f'object-fit:contain;" /></div>',
+                f'object-fit:contain;" loading="lazy"/></div>',
                 unsafe_allow_html=True
             )
         else:
             st.markdown(
-                '<div style="text-align:center; padding:40px; background:#111; '
-                'border-radius:8px; color:#666; margin-bottom:8px;">Sem imagem</div>',
+                '<div style="height:160px; background:#111; border-radius:8px; '
+                'display:flex; align-items:center; justify-content:center; '
+                'color:#666; margin-bottom:8px;">Sem imagem</div>',
                 unsafe_allow_html=True
             )
 
@@ -66,20 +62,15 @@ def render_product_card(product):
             st.markdown(f"**-{product['discount']}% OFF**")
         with col2:
             st.markdown(
-                f'<span style="background:{mp_cor}; padding:2px 8px; '
-                f'border-radius:6px; font-size:12px; font-weight:bold;">'
-                f'{mp_label}</span>',
+                f'<span style="{mp_cor} padding:3px 8px; border-radius:6px; '
+                f'font-size:12px; font-weight:bold;">{mp_label}</span>',
                 unsafe_allow_html=True
             )
 
         title = product["title"]
         st.markdown(f"**{title[:70]}{'...' if len(title) > 70 else ''}**")
-        st.caption(product.get("tag", ""))
         st.markdown(f"### R$ {product['price']:,.2f}")
-        st.caption(
-            f"De: R$ {product['original_price']:,.2f} | "
-            f"Economia: R$ {economy:,.2f}"
-        )
+        st.caption(f"De: R$ {product['original_price']:,.2f}  |  Economia: R$ {economy:,.2f}")
 
         c1, c2 = st.columns(2)
         with c1:
