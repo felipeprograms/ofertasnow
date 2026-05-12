@@ -2,21 +2,39 @@ import os
 import streamlit as st
 from data.products import PRODUCTS, CATEGORIES, MARKETPLACES
 from utils.mercadolivre import buscar_produtos_ml, buscar_por_termo_ml
+from utils.shopee import buscar_produtos_shopee
 
 
 def get_products_smart(categoria="todos", search_query=""):
+    all_products = []
+
+    # Tenta Shopee Feed
+    try:
+        shopee = buscar_produtos_shopee(categoria, limite=6)
+        if shopee:
+            all_products.extend(shopee)
+    except Exception:
+        pass
+
+    # Tenta ML
     try:
         client_id = os.environ.get("ML_CLIENT_ID", "")
         if client_id:
             if search_query:
-                produtos = buscar_por_termo_ml(search_query, limite=12)
+                ml = buscar_por_termo_ml(search_query, limite=6)
             else:
                 cat = categoria if categoria != "todos" else "informatica"
-                produtos = buscar_produtos_ml(cat, limite=12)
-            if produtos:
-                return produtos
+                ml = buscar_produtos_ml(cat, limite=6)
+            if ml:
+                all_products.extend(ml)
     except Exception:
         pass
+
+    # Se conseguiu produtos das APIs, retorna
+    if all_products:
+        return all_products
+
+    # Fallback para produtos demo
     return PRODUCTS
 
 
@@ -29,12 +47,11 @@ def render_product_card(product):
 
     url = product.get("affiliate_url", "https://www.mercadolivre.com.br")
     if not url.startswith("http"):
-        url = "https://www.mercadolivre.com.br"
+        url = "https://shopee.com.br"
 
     image_url = product.get("image", "")
 
     with st.container(border=True):
-        # Imagem
         if image_url and image_url.startswith("https"):
             st.markdown(
                 f'<img src="{image_url}" style="width:100%; max-height:180px; '
@@ -43,33 +60,31 @@ def render_product_card(product):
                 unsafe_allow_html=True
             )
         else:
-            st.caption("Sem imagem")
+            st.markdown(
+                '<div style="height:160px; background:#111; border-radius:8px; '
+                'display:flex; align-items:center; justify-content:center; '
+                'color:#555; font-size:12px;">Sem imagem</div>',
+                unsafe_allow_html=True
+            )
 
         st.markdown("")
-
-        # Badges
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f"**-{product['discount']}% OFF**")
         with col2:
             st.caption(mp_label)
 
-        # Titulo
         title = product["title"]
         st.markdown(f"**{title[:65]}{'...' if len(title) > 65 else ''}**")
-
-        # Preco
         st.markdown(f"### R$ {product['price']:,.2f}")
         st.caption(f"De: R$ {product['original_price']:,.2f} | Economia: R$ {economy:,.2f}")
 
-        # Rating e frete
         c1, c2 = st.columns(2)
         with c1:
             st.caption(f"{stars} ({product['reviews']:,})")
         with c2:
             st.caption(shipping)
 
-        # Botao nativo Streamlit
         st.link_button(
             label=f"Comprar no {mp_label}",
             url=url,
