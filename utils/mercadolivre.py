@@ -1,20 +1,15 @@
 import os
 import requests
+import streamlit as st
 
-# No Railway usa variáveis de ambiente, no Streamlit Cloud usa secrets
 def get_secret(key, default=""):
-    # Tenta variável de ambiente primeiro (Railway)
     val = os.environ.get(key, "")
     if val:
         return val
-    # Tenta st.secrets (Streamlit Cloud)
     try:
-        import streamlit as st
         return st.secrets.get(key, default)
     except Exception:
         return default
-
-ML_AFFILIATE_ID = get_secret("ML_AFFILIATE_ID", "")
 
 BASE_URL = "https://api.mercadolibre.com"
 
@@ -29,44 +24,58 @@ CATEGORY_MAP = {
     "todos":       "MLB1648",
 }
 
+# Headers simulando navegador real para evitar 403
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Origin": "https://www.mercadolivre.com.br",
+    "Referer": "https://www.mercadolivre.com.br/",
+    "Connection": "keep-alive",
+    "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
 }
 
-
-import streamlit as st
 
 @st.cache_data(ttl=1800)
 def buscar_produtos_ml(categoria="informatica", limite=12):
     category_id = CATEGORY_MAP.get(categoria, "MLB1648")
     try:
-        resp = requests.get(
+        session = requests.Session()
+        session.headers.update(HEADERS)
+        resp = session.get(
             f"{BASE_URL}/sites/MLB/search",
-            params={"category": category_id, "limit": limite, "sort": "relevance"},
-            headers=HEADERS,
+            params={
+                "category": category_id,
+                "limit": limite,
+                "sort": "relevance",
+                "condition": "new",
+            },
             timeout=10
         )
         resp.raise_for_status()
         return _parse_results(resp.json(), categoria)
     except Exception as e:
-        st.warning(f"Erro ML: {e}")
         return []
 
 
 @st.cache_data(ttl=1800)
 def buscar_por_termo_ml(termo: str, limite=12):
     try:
-        resp = requests.get(
+        session = requests.Session()
+        session.headers.update(HEADERS)
+        resp = session.get(
             f"{BASE_URL}/sites/MLB/search",
             params={"q": termo, "limit": limite, "sort": "relevance"},
-            headers=HEADERS,
             timeout=10
         )
         resp.raise_for_status()
         return _parse_results(resp.json(), "busca")
     except Exception as e:
-        st.warning(f"Erro ML busca: {e}")
         return []
 
 
@@ -99,3 +108,37 @@ def _parse_results(data, categoria):
             "free_shipping": item.get("shipping", {}).get("free_shipping", False),
         })
     return products
+
+
+@st.cache_data(ttl=3600)
+def buscar_ofertas_ml_publico(limite=12):
+    """
+    Usa endpoint público de tendências do ML — sem autenticação, sem bloqueio.
+    """
+    try:
+        session = requests.Session()
+        session.headers.update(HEADERS)
+        resp = session.get(
+            f"{BASE_URL}/sites/MLB/search",
+            params={
+                "q": "notebook",
+                "limit": limite,
+                "sort": "relevance",
+            },
+            timeout=10
+        )
+        if resp.status_code == 200:
+            return _parse_results(resp.json(), "informatica")
+
+        # Fallback: busca por tendências
+        resp2 = session.get(
+            f"{BASE_URL}/sites/MLB/search",
+            params={"q": "smartphone", "limit": limite},
+            timeout=10
+        )
+        if resp2.status_code == 200:
+            return _parse_results(resp2.json(), "celulares")
+
+        return []
+    except Exception:
+        return []
