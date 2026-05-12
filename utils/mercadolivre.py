@@ -1,7 +1,20 @@
-import streamlit as st
+import os
 import requests
 
-ML_AFFILIATE_ID = st.secrets.get("ML_AFFILIATE_ID", "")
+# No Railway usa variáveis de ambiente, no Streamlit Cloud usa secrets
+def get_secret(key, default=""):
+    # Tenta variável de ambiente primeiro (Railway)
+    val = os.environ.get(key, "")
+    if val:
+        return val
+    # Tenta st.secrets (Streamlit Cloud)
+    try:
+        import streamlit as st
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+ML_AFFILIATE_ID = get_secret("ML_AFFILIATE_ID", "")
 
 BASE_URL = "https://api.mercadolibre.com"
 
@@ -21,6 +34,8 @@ HEADERS = {
     "Accept": "application/json",
 }
 
+
+import streamlit as st
 
 @st.cache_data(ttl=1800)
 def buscar_produtos_ml(categoria="informatica", limite=12):
@@ -57,18 +72,17 @@ def buscar_por_termo_ml(termo: str, limite=12):
 
 def _parse_results(data, categoria):
     products = []
+    affiliate_id = get_secret("ML_AFFILIATE_ID", "")
     for item in data.get("results", []):
         original = item.get("original_price") or item["price"]
         price = item["price"]
         discount = int((1 - price / original) * 100) if original > price else 0
-
-        # Permalink é a URL direta e pública do produto no ML
         url = item.get("permalink", "https://www.mercadolivre.com.br")
-
+        if affiliate_id:
+            url = (f"https://www.mercadolivre.com.br/offsite?id={item['id']}"
+                   f"&matt_tool={affiliate_id}&utm_source=ofertasnow&utm_medium=affiliate")
         thumbnail = item.get("thumbnail", "")
-        # Força imagem maior
         image = thumbnail.replace("-I.jpg", "-O.jpg").replace("http://", "https://")
-
         products.append({
             "id": f"ml_{item['id']}",
             "title": item["title"],
