@@ -6,13 +6,20 @@ from utils.mercadolivre import buscar_produtos_ml, buscar_por_termo_ml
 
 def get_products_smart(categoria="todos", search_query=""):
     try:
-        if search_query:
-            produtos = buscar_por_termo_ml(search_query, limite=12)
-        else:
-            cat = categoria if categoria != "todos" else "informatica"
-            produtos = buscar_produtos_ml(cat, limite=12)
-        if produtos:
-            return produtos
+        client_id = os.environ.get("ML_CLIENT_ID", "")
+        if not client_id:
+            try:
+                client_id = st.secrets.get("ML_CLIENT_ID", "")
+            except Exception:
+                pass
+        if client_id:
+            if search_query:
+                produtos = buscar_por_termo_ml(search_query, limite=12)
+            else:
+                cat = categoria if categoria != "todos" else "informatica"
+                produtos = buscar_produtos_ml(cat, limite=12)
+            if produtos:
+                return produtos
     except Exception:
         pass
     return PRODUCTS
@@ -41,50 +48,58 @@ def render_product_card(product):
     image_url = product.get("image", "")
 
     with st.container(border=True):
+        # Imagem
         if image_url and image_url.startswith("https"):
             st.markdown(
                 f'<div style="text-align:center; background:#111; border-radius:8px; '
-                f'padding:8px; margin-bottom:8px; height:160px; display:flex; '
+                f'padding:8px; margin-bottom:8px; height:180px; display:flex; '
                 f'align-items:center; justify-content:center; overflow:hidden;">'
-                f'<img src="{image_url}" style="max-height:150px; max-width:100%; '
+                f'<img src="{image_url}" style="max-height:170px; max-width:100%; '
                 f'object-fit:contain;" loading="lazy"/></div>',
                 unsafe_allow_html=True
             )
         else:
             st.markdown(
-                '<div style="height:160px; background:#111; border-radius:8px; '
+                '<div style="height:180px; background:#111; border-radius:8px; '
                 'display:flex; align-items:center; justify-content:center; '
-                'color:#666; margin-bottom:8px;">Sem imagem</div>',
+                'color:#666; margin-bottom:8px; font-size:13px;">Sem imagem</div>',
                 unsafe_allow_html=True
             )
 
+        # Badges
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(f"**-{product['discount']}% OFF**")
         with col2:
             st.markdown(
-                f'<span style="{mp_cor} padding:3px 8px; border-radius:6px; '
+                f'<span style="{mp_cor} padding:3px 10px; border-radius:6px; '
                 f'font-size:12px; font-weight:bold;">{mp_label}</span>',
                 unsafe_allow_html=True
             )
 
+        # Titulo
         title = product["title"]
         st.markdown(f"**{title[:70]}{'...' if len(title) > 70 else ''}**")
+
+        # Preco
         st.markdown(f"### R$ {product['price']:,.2f}")
         st.caption(f"De: R$ {product['original_price']:,.2f}  |  Economia: R$ {economy:,.2f}")
 
+        # Rating e frete
         c1, c2 = st.columns(2)
         with c1:
             st.caption(f"{stars} ({product['reviews']:,})")
         with c2:
             st.caption(shipping)
 
+        # Botao — texto simples ASCII para evitar problema de encoding
+        btn_text = f"Comprar no {mp_label}"
         st.markdown(
             f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
             f'style="display:block; text-align:center; background:#ff6b00; '
-            f'color:white !important; padding:10px; border-radius:8px; '
-            f'font-weight:bold; text-decoration:none; font-size:14px; '
-            f'margin-top:8px;">Comprar no {mp_label}</a>',
+            f'color:white !important; padding:11px 0; border-radius:8px; '
+            f'font-weight:700; text-decoration:none; font-size:14px; '
+            f'margin-top:8px; font-family:sans-serif;">{btn_text}</a>',
             unsafe_allow_html=True
         )
 
@@ -146,7 +161,7 @@ def render_feed():
         products = filter_products(products)
 
     if not products:
-        st.info("Nenhum produto encontrado. Tente outro filtro.")
+        st.info("Nenhum produto encontrado.")
         return
 
     st.markdown(f"**{len(products)} ofertas encontradas**")
