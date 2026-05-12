@@ -24,58 +24,69 @@ CATEGORY_MAP = {
     "todos":       "MLB1648",
 }
 
-# Headers simulando navegador real para evitar 403
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Origin": "https://www.mercadolivre.com.br",
-    "Referer": "https://www.mercadolivre.com.br/",
-    "Connection": "keep-alive",
-    "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-site",
-}
+
+@st.cache_data(ttl=3600)
+def get_access_token():
+    """Gera token via Client Credentials — não precisa de autorização do usuário."""
+    client_id = get_secret("ML_CLIENT_ID", "")
+    client_secret = get_secret("ML_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        return ""
+    try:
+        resp = requests.post(
+            "https://api.mercadolibre.com/oauth/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10
+        )
+        resp.raise_for_status()
+        return resp.json().get("access_token", "")
+    except Exception as e:
+        return ""
 
 
 @st.cache_data(ttl=1800)
 def buscar_produtos_ml(categoria="informatica", limite=12):
+    token = get_access_token()
     category_id = CATEGORY_MAP.get(categoria, "MLB1648")
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     try:
-        session = requests.Session()
-        session.headers.update(HEADERS)
-        resp = session.get(
+        resp = requests.get(
             f"{BASE_URL}/sites/MLB/search",
-            params={
-                "category": category_id,
-                "limit": limite,
-                "sort": "relevance",
-                "condition": "new",
-            },
+            params={"category": category_id, "limit": limite, "sort": "relevance"},
+            headers=headers,
             timeout=10
         )
         resp.raise_for_status()
         return _parse_results(resp.json(), categoria)
     except Exception as e:
+        st.warning(f"Erro ML: {e}")
         return []
 
 
 @st.cache_data(ttl=1800)
 def buscar_por_termo_ml(termo: str, limite=12):
+    token = get_access_token()
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     try:
-        session = requests.Session()
-        session.headers.update(HEADERS)
-        resp = session.get(
+        resp = requests.get(
             f"{BASE_URL}/sites/MLB/search",
             params={"q": termo, "limit": limite, "sort": "relevance"},
+            headers=headers,
             timeout=10
         )
         resp.raise_for_status()
         return _parse_results(resp.json(), "busca")
     except Exception as e:
+        st.warning(f"Erro ML busca: {e}")
         return []
 
 
@@ -108,37 +119,3 @@ def _parse_results(data, categoria):
             "free_shipping": item.get("shipping", {}).get("free_shipping", False),
         })
     return products
-
-
-@st.cache_data(ttl=3600)
-def buscar_ofertas_ml_publico(limite=12):
-    """
-    Usa endpoint público de tendências do ML — sem autenticação, sem bloqueio.
-    """
-    try:
-        session = requests.Session()
-        session.headers.update(HEADERS)
-        resp = session.get(
-            f"{BASE_URL}/sites/MLB/search",
-            params={
-                "q": "notebook",
-                "limit": limite,
-                "sort": "relevance",
-            },
-            timeout=10
-        )
-        if resp.status_code == 200:
-            return _parse_results(resp.json(), "informatica")
-
-        # Fallback: busca por tendências
-        resp2 = session.get(
-            f"{BASE_URL}/sites/MLB/search",
-            params={"q": "smartphone", "limit": limite},
-            timeout=10
-        )
-        if resp2.status_code == 200:
-            return _parse_results(resp2.json(), "celulares")
-
-        return []
-    except Exception:
-        return []
