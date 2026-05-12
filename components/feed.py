@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 from data.products import PRODUCTS, CATEGORIES, MARKETPLACES
 from utils.mercadolivre import buscar_produtos_ml, buscar_por_termo_ml
