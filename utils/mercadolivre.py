@@ -66,7 +66,7 @@ def buscar_produtos_ml(categoria="informatica", limite=12):
         resp.raise_for_status()
         return _parse_results(resp.json(), categoria)
     except Exception as e:
-        st.warning(f"Erro ML: {e}")
+        pass  # Silencia erro 403
         return []
 
 
@@ -86,7 +86,7 @@ def buscar_por_termo_ml(termo: str, limite=12):
         resp.raise_for_status()
         return _parse_results(resp.json(), "busca")
     except Exception as e:
-        st.warning(f"Erro ML busca: {e}")
+        pass  # Silencia erro 403
         return []
 
 
